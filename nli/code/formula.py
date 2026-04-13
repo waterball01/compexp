@@ -141,7 +141,7 @@ NOT_ = pp.Keyword("NOT")("operator")
 NEIGHBORS_ = pp.Keyword("NEIGHBORS")("operator")
 HYPERNYM_ = pp.Keyword("HYPERNYM")("operator")
 
-expr = pp.operatorPrecedence(
+expr = pp.infixNotation(
     condition,
     [
         (
