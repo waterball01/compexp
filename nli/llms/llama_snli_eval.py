@@ -9,6 +9,7 @@ from tqdm import tqdm
 from llama import MODEL, ask
 
 LABELS = ("entailment", "neutral", "contradiction")
+MAX_SAMPLES = 3000
 
 SINGLE_WORD_SYSTEM = (
     "Answer with a SINGLE WORD only. "
@@ -39,7 +40,8 @@ def main(tok_path):
 
     fbase = os.path.splitext(os.path.basename(tok_path))[0]
     gt_csv = os.path.join(os.path.dirname(tok_path), "preds", f"6_{fbase}.csv")
-    gt_df = pd.read_csv(gt_csv)
+    gt_df = pd.read_csv(gt_csv).iloc[:MAX_SAMPLES]
+    lines = lines[: MAX_SAMPLES * 2]
 
     all_preds = []
     gt_labels = []
@@ -65,4 +67,6 @@ def main(tok_path):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        raise SystemExit(f"Usage: python {sys.argv[0]} <tokenized_path>")
     main(sys.argv[1])
