@@ -1,0 +1,10 @@
+{
+  "bowman": {
+    "model": "models/bowman_snli/6.pth",
+    "model_type": "bowman_lstm",
+    "dataset": "snli_1.0_dev",
+    "n_examples": 10000,
+    "accuracy": 0.7753,
+    "predictions_csv": "data/analysis/preds/6_snli_1.0_dev.csv"
+  }
+}
