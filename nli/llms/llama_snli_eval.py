@@ -9,7 +9,7 @@ from tqdm import tqdm
 from llama import MODEL, ask
 
 LABELS = ("entailment", "neutral", "contradiction")
-MAX_SAMPLES = 3000
+MAX_SAMPLES = 10000
 
 SINGLE_WORD_SYSTEM = (
     "Answer with a SINGLE WORD only. "
