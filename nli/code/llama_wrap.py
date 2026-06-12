@@ -33,17 +33,27 @@ class Hook:
  
  
 def load_data():
-    lines  = open(TOK_FILE).read().splitlines()
-    prems  = lines[0::2]
-    hyps   = lines[1::2]
+    lines = open(TOK_FILE).read().splitlines()
+    prems = lines[0::2]
+    hyps = lines[1::2]
  
     labels = []
     with open(PREDS_FILE) as f:
         for row in csv.DictReader(f):
             labels.append(LABEL_MAP.get(row["gt"], -1))
  
-    pairs = [(p, h, l) for p, h, l in zip(prems, hyps, labels) if l != -1]
-    print(f"Loaded {len(pairs)} labelled pairs")
+    pairs = []
+    for p, h, l in zip(prems, hyps, labels):
+        if l != -1:
+            pairs.append({
+                "prem_raw": p,                            
+                "hyp_raw": h,                             
+                "prem_tokens": set(p.lower().split()),    
+                "hyp_tokens": set(h.lower().split()),   
+                "label": l
+            })
+            
+    print(f"Loaded {len(pairs)} tokenized pairs")
     return pairs
  
  
@@ -53,15 +63,21 @@ def extract(model, tokenizer, hook, pairs):
     with torch.no_grad():
         for i in range(0, len(pairs), BATCH_SIZE):
             batch = pairs[i : i + BATCH_SIZE]
+            
+            # Fix: Reconstruct prompts by pulling text directly out of the dictionary data structure
             prompts = [
-                f"Premise: {p}\nHypothesis: {h}\nRelationship:"
-                for p, h, _ in batch
+                f"Premise: {item['prem_raw']}\nHypothesis: {item['hyp_raw']}\nRelationship:"
+                for item in batch
             ]
+            
             enc = tokenizer(prompts, return_tensors="pt", padding=True,
                             truncation=True, max_length=MAX_LEN).to(DEVICE)
             model(**enc)                              # triggers hook
             all_acts.append(hook.out.numpy())
-            all_labels.extend(lbl for _, _, lbl in batch)
+            
+            # Fix: Pull the actual integer label out of the dictionary key
+            all_labels.extend(item["label"] for item in batch)
+            
             if i % 100 == 0:
                 print(f"  {i}/{len(pairs)}", end="\r")
     print()
@@ -71,16 +87,25 @@ def extract(model, tokenizer, hook, pairs):
 def iou(a, b):
     return (a & b).sum() / ((a | b).sum() + 1e-9)
  
-def build_concept_masks(acts, labels):
+def build_concept_masks(pairs):
+    prem_counts = Counter()
+    hyp_counts = Counter()
+    for item in pairs:
+        prem_counts.update(item["prem_tokens"])
+        hyp_counts.update(item["hyp_tokens"])
+    
+    top_prem_toks = [tok for tok, _ in prem_counts.most_common(30)]
+    top_hyp_toks = [tok for tok, _ in hyp_counts.most_common(30)]
+    
     masks = {}
-    masks["entailment"]    = (labels == 0)
-    masks["neutral"]       = (labels == 1)
-    masks["contradiction"] = (labels == 2)
-    rng = np.random.default_rng(42)
-    probe_units = rng.choice(acts.shape[1], size=min(50, acts.shape[1]), replace=False)
-    for u in probe_units:
-        thr = np.percentile(acts[:, u], 75)
-        masks[f"unit:{u}"] = (acts[:, u] >= thr)
+    num_samples = len(pairs)
+    
+    for tok in top_prem_toks:
+        masks[f"pre:tok:{tok}"] = np.array([tok in item["prem_tokens"] for item in pairs], dtype=bool)
+        
+    for tok in top_hyp_toks:
+        masks[f"hyp:tok:{tok}"] = np.array([tok in item["hyp_tokens"] for item in pairs], dtype=bool)
+        
     return masks
  
 def eval_formula(f, masks):
@@ -145,8 +170,8 @@ def formula_to_str(f, mask_keys):
         return f"({formula_to_str(f.left, mask_keys)} OR {formula_to_str(f.right, mask_keys)})"
     return str(f)
  
-def run_compexp(acts, labels):
-    masks = build_concept_masks(acts, labels)
+def run_compexp(acts, pairs):
+    masks = build_concept_masks(pairs)
     mask_keys = list(masks.keys())
     mask_vals = {k: v for k, v in masks.items()}
  
@@ -187,8 +212,7 @@ def main():
     print(f"Activations: {acts.shape}")
  
     print(f"\nRunning CompExp on units 0–{NUM_UNITS - 1}...")
-    results = run_compexp(acts, labels)
- 
+    results = run_compexp(acts, pairs) 
     os.makedirs(os.path.dirname(OUT_CSV) or ".", exist_ok=True)
     with open(OUT_CSV, "w", newline="") as f:
         w = csv.writer(f)
